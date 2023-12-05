@@ -82,49 +82,6 @@ data_15m["RSI_14"] = compute_rsi(data_15m["Close"], window=14)
 data_15m["RSI_9"] = compute_rsi(data_15m["Close"], window=9)
 data_15m["MACD"], data_15m["Signal"] = compute_macd(data_15m["Close"])
 
-
-# Ensure MACD_cross is a boolean series and fill NaN values
-data_15m["MACD_cross"] = (data_15m["MACD"] > data_15m["Signal"]).fillna(False)
-
-# Use .astype(bool) to ensure that the series is boolean after filling NaN values
-data_15m["MACD_cross"] = data_15m["MACD_cross"].astype(bool)
-
-# Shift the MACD_cross column to identify where the cross just happened
-data_15m["MACD_cross"] = data_15m["MACD_cross"] & (
-    ~data_15m["MACD_cross"].shift(1).fillna(False)
-)
-data_15m["MACD_cross"] = data_15m["MACD"] > data_15m["Signal"]
-data_15m["MACD_cross"] = data_15m["MACD_cross"].fillna(False).astype(bool)
-data_15m["MACD_cross"] = data_15m["MACD_cross"] & (
-    ~data_15m["MACD_cross"].shift(1).fillna(False)
-)
-
-# Calculate where RSI is above 50
-data_15m["RSI_cross"] = data_15m["RSI_14"] > 50
-data_15m["buy_signal"] = data_15m["MACD_cross"] & data_15m["RSI_cross"]
-
-# Filter for buy signals
-buy_signals = data_15m[data_15m["buy_signal"]]
-
-##########################################
-
-# Determine where MACD crosses below the signal line
-data_15m["MACD_cross_down"] = data_15m["MACD"] < data_15m["Signal"]
-data_15m["MACD_cross_down"] = data_15m["MACD_cross_down"].fillna(False).astype(bool)
-data_15m["MACD_cross_down"] = data_15m["MACD_cross_down"] & (
-    ~data_15m["MACD_cross_down"].shift(1).fillna(False)
-)
-
-# Determine where RSI is below 50
-data_15m["RSI_below_50"] = data_15m["RSI_14"] < 50
-
-# Combine both conditions to form the sell signal
-data_15m["sell_signal"] = data_15m["MACD_cross_down"] & data_15m["RSI_below_50"]
-
-# Filter for sell signals
-sell_signals = data_15m[data_15m["sell_signal"]]
-
-
 # 데이터의 최신 부분을 기준으로 초기 확대 범위를 설정합니다.
 # 예를 들어, 마지막 100개 데이터 포인트를 기준으로:
 if len(data_15m) > 100:  # 데이터 포인트가 충분한 경우
@@ -197,30 +154,6 @@ fig.add_trace(
     row=1,
     col=1,
 )
-
-fig.add_trace(
-    go.Scatter(
-        x=buy_signals.index,
-        y=buy_signals["Close"],
-        mode="markers",
-        marker=dict(color="red", size=15, symbol="triangle-up"),
-        name="Buy Signal",
-    ),
-    row=1,
-    col=1,
-)
-fig.add_trace(
-    go.Scatter(
-        x=sell_signals.index,
-        y=sell_signals["Close"],
-        mode="markers",
-        marker=dict(color="blue", size=15, symbol="triangle-down"),
-        name="Sell Signal",
-    ),
-    row=1,
-    col=1,
-)
-
 # Plotly 차트 생성 및 RSI 트레이스 추가
 fig.add_trace(
     go.Scatter(
@@ -273,64 +206,26 @@ fig.add_trace(
     row=5,  # 신호선 그래프를 4번째 행에 추가
     col=1,
 )
-# Set the initial zoom to the most recent 100 data points
-initial_zoom_points = 100
-if len(data_15m) > initial_zoom_points:
-    end_date = data_15m.index[-1]
-    start_date = data_15m.index[-initial_zoom_points]
-
-    # fig = make_subplots(rows=4, cols=1, shared_xaxes=True, vertical_spacing=0.05)
-    # Add your traces here
-
-    # Update the layout to set the x-axis range
-    fig.update_layout(
-        height=4500,
-        title="15 Minute BTCUSDT Chart",
-        xaxis=dict(
-            rangeslider=dict(visible=True), type="date", range=[start_date, end_date]
-        ),
-        # Repeat for all x-axis if you have multiple subplots
-        xaxis2=dict(
-            rangeslider=dict(visible=True), type="date", range=[start_date, end_date]
-        ),
-        xaxis3=dict(
-            rangeslider=dict(visible=True), type="date", range=[start_date, end_date]
-        ),
-        xaxis5=dict(
-            rangeslider=dict(visible=True), type="date", range=[start_date, end_date]
-        ),
-        # Set the drag mode to zoom for better user experience
-        dragmode="zoom",
-    )
-
-    # Render the figure in Streamlit
-    st.plotly_chart(fig, use_container_width=True)
 
 
-# fig.update_layout(
-#     height=4500,
-#     title="15 Minute BTCUSDT Chart",
-#     xaxis=dict(
-#         rangeslider=dict(visible=True),
-#         type="date",
-#         range=[one_week_ago, latest_date],  # Set the initial range to the last week
-#     ),
-#     xaxis2=dict(
-#         rangeslider=dict(visible=True), type="date", range=[one_week_ago, latest_date]
-#     ),
-#     xaxis3=dict(
-#         rangeslider=dict(visible=True), type="date", range=[one_week_ago, latest_date]
-#     ),
-#     xaxis5=dict(
-#         rangeslider=dict(visible=True), type="date", range=[one_week_ago, latest_date]
-#     ),
-#     dragmode="zoom",  # 드래그 모드를 'zoom'으로 설정하여 차트 확대 가능
-# )
-# # Streamlit에 차트 표시
-# st.plotly_chart(fig, use_container_width=True)
-
-
-# 스토캐스틱 슬로우
-# 지지저항
-
-# Stocastic ->  MACD -> RSI -> 볼링저 지지저항
+fig.update_layout(
+    height=1200,
+    title="15 Minute BTCUSDT Chart",
+    xaxis=dict(
+        rangeslider=dict(visible=True),
+        type="date",
+        range=[one_week_ago, latest_date],  # Set the initial range to the last week
+    ),
+    xaxis2=dict(
+        rangeslider=dict(visible=True), type="date", range=[one_week_ago, latest_date]
+    ),
+    xaxis3=dict(
+        rangeslider=dict(visible=True), type="date", range=[one_week_ago, latest_date]
+    ),
+    xaxis5=dict(
+        rangeslider=dict(visible=True), type="date", range=[one_week_ago, latest_date]
+    ),
+    dragmode="zoom",  # 드래그 모드를 'zoom'으로 설정하여 차트 확대 가능
+)
+# Streamlit에 차트 표시
+st.plotly_chart(fig, use_container_width=True)
