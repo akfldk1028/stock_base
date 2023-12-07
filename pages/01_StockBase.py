@@ -6,6 +6,9 @@ from binance.client import Client
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import datetime
+from pandas.tseries.offsets import DateOffset
+import math
+import numpy as np
 
 # 현재 날짜와 시간을 기준으로 일정 범위를 설정 (예: 최근 2일간의 데이터)
 
@@ -76,53 +79,203 @@ def compute_macd(data, slow=26, fast=12, signal=9):
     return macd, signal_line
 
 
-# 데이터에 RSI 및 MACD 추가
+# 데이터에 RSI 및 MACD 추가 ETH
 data_15m = get_data("BTCUSDT", Client.KLINE_INTERVAL_1HOUR, "30 day ago UTC")
 data_15m["RSI_14"] = compute_rsi(data_15m["Close"], window=14)
 data_15m["RSI_9"] = compute_rsi(data_15m["Close"], window=9)
 data_15m["MACD"], data_15m["Signal"] = compute_macd(data_15m["Close"])
 
+# MACD와 Signal 라인 간의 차이를 계산합니다.
+data_15m["MACD_diff"] = data_15m["MACD"] - data_15m["Signal"]
 
-# Ensure MACD_cross is a boolean series and fill NaN values
-data_15m["MACD_cross"] = (data_15m["MACD"] > data_15m["Signal"]).fillna(False)
+print(data_15m["MACD_diff"])
+# Calculate the difference in MACD values between the current and the previous row
+data_15m["MACD_slope"] = data_15m["MACD"].diff()
 
-# Use .astype(bool) to ensure that the series is boolean after filling NaN values
-data_15m["MACD_cross"] = data_15m["MACD_cross"].astype(bool)
+# Alternatively, if you want to calculate the slope over a different period (e.g., over 2 periods), you can use:
+# data_15m["MACD_slope"] = data_15m["MACD"].diff(2)
 
-# Shift the MACD_cross column to identify where the cross just happened
-data_15m["MACD_cross"] = data_15m["MACD_cross"] & (
-    ~data_15m["MACD_cross"].shift(1).fillna(False)
+# Check the sign of the MACD_slope to determine if it's going up or down
+data_15m["MACD_direction"] = data_15m["MACD_slope"].apply(
+    lambda x: "up" if x > 0 else ("down" if x < 0 else "flat")
 )
-data_15m["MACD_cross"] = data_15m["MACD"] > data_15m["Signal"]
-data_15m["MACD_cross"] = data_15m["MACD_cross"].fillna(False).astype(bool)
-data_15m["MACD_cross"] = data_15m["MACD_cross"] & (
-    ~data_15m["MACD_cross"].shift(1).fillna(False)
-)
+# print(data_15m["MACD_direction"] == "up")
 
-# Calculate where RSI is above 50
-data_15m["RSI_cross"] = data_15m["RSI_14"] > 50
-data_15m["buy_signal"] = data_15m["MACD_cross"] & data_15m["RSI_cross"]
-
-# Filter for buy signals
-buy_signals = data_15m[data_15m["buy_signal"]]
-
-##########################################
-
-# Determine where MACD crosses below the signal line
-data_15m["MACD_cross_down"] = data_15m["MACD"] < data_15m["Signal"]
-data_15m["MACD_cross_down"] = data_15m["MACD_cross_down"].fillna(False).astype(bool)
-data_15m["MACD_cross_down"] = data_15m["MACD_cross_down"] & (
-    ~data_15m["MACD_cross_down"].shift(1).fillna(False)
+data_15m["MACD_bounce_up_with_positive_slope"] = (
+    (data_15m["MACD"].shift(2) > data_15m["Signal"].shift(2))
+    & (data_15m["MACD"].shift(1) < data_15m["Signal"].shift(1))
+    & (data_15m["MACD"] > data_15m["Signal"])  # 바로 이전에는 MACD가 Signal 아래였음
+    & (  # 현재는 MACD가 Signal 위에 있음
+        data_15m["MACD_direction"] == "up"
+    )  # MACD의 기울기가 양수, 즉 상승세
 )
 
-# Determine where RSI is below 50
-data_15m["RSI_below_50"] = data_15m["RSI_14"] < 50
 
-# Combine both conditions to form the sell signal
-data_15m["sell_signal"] = data_15m["MACD_cross_down"] & data_15m["RSI_below_50"]
+# # MACD 지지 및 저항 판단
+# data_15m["MACD_support"] = (
+#     data_15m["MACD_within_tolerance"] | (data_15m["MACD"] < data_15m["Signal"])
+# ) & (data_15m["MACD_slope"] > 0)
+# data_15m["MACD_resistance"] = (
+#     data_15m["MACD_within_tolerance"] | (data_15m["MACD"] > data_15m["Signal"])
+# ) & (data_15m["MACD_slope"] < 0)
 
-# Filter for sell signals
-sell_signals = data_15m[data_15m["sell_signal"]]
+data_15m["MACD_diff_by0"] = np.round(data_15m["MACD_diff"].abs()) == 0
+data_15m["MACD_diff_above1"] = np.round(data_15m["MACD_diff"].abs(), 1) >= 0.5
+# print(np.round(data_15m["MACD_diff"].abs(), 2))
+# MACD_diff가 특정 양의 값(여기서는 0.5) 이상인 경우를 찾습니다.
+
+data_15m["MACD_diff_above2"] = (
+    data_15m["MACD"].shift(2) - data_15m["Signal"].shift(1)
+).abs() >= 0.5
+
+
+data_15m["MACD_diff_above3"] = (
+    data_15m["MACD"].shift(1) - data_15m["Signal"].shift(1)
+).abs() <= 0.3
+# 16.36 - 15.146
+
+
+# data_15m["MACD_cross_up"] = (
+#     (data_15m["MACD"] > data_15m["Signal"])
+#     & (data_15m["MACD"].shift(1) < data_15m["Signal"].shift(1))
+#     & (data_15m["MACD"].shift(2) < data_15m["Signal"].shift(2))
+#     & (data_15m["MACD"].shift(3) < data_15m["Signal"].shift(3))
+# ) | ((data_15m["MACD"] < data_15m["Signal"]) & data_15m["MACD_diff_above3"])
+
+data_15m["MACD_cross_up"] = (
+    (data_15m["MACD"] > data_15m["Signal"])
+    & (data_15m["MACD"].shift(1) < data_15m["Signal"].shift(1))
+    & (data_15m["MACD"].shift(2) < data_15m["Signal"].shift(2))
+    & (data_15m["MACD"].shift(3) < data_15m["Signal"].shift(3))
+) | data_15m["MACD_bounce_up_with_positive_slope"]
+
+data_15m["MACD_cross_up2"] = (
+    (data_15m["MACD"].shift(1) < data_15m["Signal"].shift(1))
+    & (data_15m["MACD"].shift(2) < data_15m["Signal"].shift(2))
+    & (data_15m["MACD"].shift(3) < data_15m["Signal"].shift(3))
+) & data_15m["MACD_diff_above3"]
+
+
+# RSI 9가 40 미만이었던 최근 2개 캔들 확인
+data_15m["RSI_recently_below_40"] = (
+    (data_15m["RSI_14"] < 45)
+    | (data_15m["RSI_14"].shift(1) < 45)
+    | (data_15m["RSI_14"].shift(2) < 45)
+) | (
+    (data_15m["RSI_14"].shift(6) < 40)
+    | (data_15m["RSI_14"].shift(5) < 40)
+    | (data_15m["RSI_14"].shift(7) < 40)
+    | (data_15m["RSI_14"].shift(8) < 40)
+)
+
+
+data_15m["RSI_recently_below_60"] = (
+    (data_15m["RSI_14"] < 65)
+    | (data_15m["RSI_14"].shift(1) < 65)
+    | (data_15m["RSI_14"].shift(2) < 65)
+)
+data_15m["RSI_recently_above_40"] = data_15m["RSI_14"] < 40
+
+# 11/20 17:00 macd  16.36  signal  15.146
+
+# Check if RSI is above 50 and in an upward trend
+data_15m["RSI_above_50_and_rising"] = data_15m["RSI_recently_below_60"] & (
+    data_15m["RSI_14"] > data_15m["RSI_14"].shift(1)
+)
+
+
+# 11 27 rsi 55 macd 겨우 겹침 통과할랑말랑
+# 12 2일 11시엔 keep 이나 buy 였어야함 근데 why?
+# 12 3일엔 샀어야함 근데 없음 why ?
+# 12 3 21:00 매도가뜸 시그널이 더큼 같은시간에
+# 12 3 13:00  ~ 19:00 사야됨
+# 12 5 16:00
+# 11 20  17:00
+
+# Define buy condition: MACD bullish crossover and (RSI below 40 or RSI above 50 and rising)
+data_15m["buy_condition"] = (
+    (data_15m["MACD_cross_up"] & (data_15m["RSI_recently_below_40"]))
+    | (data_15m["MACD_cross_up"] & data_15m["RSI_above_50_and_rising"])
+    | (data_15m["MACD_cross_up2"] & data_15m["RSI_recently_above_40"])
+)
+
+data_15m["MACD_cross_down2"] = (
+    (data_15m["MACD"].shift(1) > data_15m["Signal"].shift(1))
+    & (data_15m["MACD"].shift(2) < data_15m["Signal"].shift(2))
+    & (data_15m["MACD"].shift(3) > data_15m["Signal"].shift(3))
+) & (data_15m["MACD"] < data_15m["Signal"])
+
+## 11 29 참고
+data_15m["MACD_cross_down"] = (
+    (data_15m["MACD"] < data_15m["Signal"])
+    & (data_15m["MACD"].shift(1) > data_15m["Signal"].shift(1))
+    & (data_15m["MACD"].shift(2) > data_15m["Signal"].shift(2))
+)
+
+
+data_15m["RSI_recently_above_60"] = (
+    (data_15m["RSI_14"] > 60)
+    | (data_15m["RSI_14"].shift(1) > 60)
+    | (data_15m["RSI_14"].shift(2) > 60)
+)
+
+
+data_15m["RSI_recently_above_45"] = (
+    (data_15m["RSI_14"] > 45)
+    | (data_15m["RSI_14"].shift(1) > 45)
+    | (data_15m["RSI_14"].shift(2) > 45)
+)
+
+
+data_15m["RSI_above_50_and_falling"] = data_15m["RSI_recently_above_45"] & (
+    data_15m["RSI_14"] < data_15m["RSI_14"].shift(1)
+)
+
+
+data_15m["sell_condition"] = (
+    (data_15m["MACD_cross_down"] & (data_15m["RSI_recently_above_60"]))
+    | (data_15m["MACD_cross_down"] & data_15m["RSI_above_50_and_falling"])
+    | data_15m["MACD_cross_down2"]
+)
+
+
+# Extract buy and sell signals
+buy_signals = data_15m[data_15m["buy_condition"]]
+sell_signals = data_15m[data_15m["sell_condition"]]
+
+
+data_15m["MA18"] = data_15m["Close"].rolling(window=18).mean()
+data_15m["Bullish"] = data_15m["Close"] > data_15m["Open"]  # Bullish candlestick
+
+# Define keep condition
+data_15m["Keep"] = (data_15m["Close"] >= data_15m["MA18"]) | (
+    data_15m["Close"] >= data_15m["Upper"]
+)
+# & data_15m["Bullish"]
+
+
+data_15m["Keep_Signal"] = False
+
+
+# Loop through the DataFrame using the index
+for i in data_15m.index:
+    if data_15m.loc[i, "buy_condition"]:
+        j = i
+        one_hour = DateOffset(hours=1)
+
+        while j in data_15m.index and not data_15m.loc[j, "sell_condition"]:
+            if data_15m.loc[j, "Keep"]:
+                data_15m.loc[j, "Keep_Signal"] = True
+            j += one_hour  # Assuming 'j' is a Timestamp here, not an integer
+
+# Adjust the sell condition based on the keep signal
+data_15m["Adjusted_Sell_Condition"] = data_15m["sell_condition"] & (
+    ~data_15m["Keep_Signal"]
+)
+
+
+# Filter for adjusted sell signals
+adjusted_sell_signals = data_15m[data_15m["Adjusted_Sell_Condition"]]
 
 
 # 데이터의 최신 부분을 기준으로 초기 확대 범위를 설정합니다.
@@ -201,7 +354,7 @@ fig.add_trace(
 fig.add_trace(
     go.Scatter(
         x=buy_signals.index,
-        y=buy_signals["Close"],
+        y=buy_signals["Open"],
         mode="markers",
         marker=dict(color="red", size=15, symbol="triangle-up"),
         name="Buy Signal",
@@ -209,13 +362,30 @@ fig.add_trace(
     row=1,
     col=1,
 )
+
+keep_signals = data_15m[data_15m["Keep_Signal"]]
+
+# Add traces for Keep signals
 fig.add_trace(
     go.Scatter(
-        x=sell_signals.index,
-        y=sell_signals["Close"],
+        x=keep_signals.index,
+        y=keep_signals["Close"],
+        mode="markers",
+        marker=dict(color="orange", size=10, symbol="star"),
+        name="Keep Signal",
+    ),
+    row=1,
+    col=1,
+)
+
+
+fig.add_trace(
+    go.Scatter(
+        x=adjusted_sell_signals.index,
+        y=adjusted_sell_signals["Open"],
         mode="markers",
         marker=dict(color="blue", size=15, symbol="triangle-down"),
-        name="Sell Signal",
+        name="Adjusted Sell Signal",
     ),
     row=1,
     col=1,
@@ -247,6 +417,8 @@ fig.add_trace(
 )
 fig.add_hline(y=70, line_dash="dash", line_color="red", row=3, col=1)  # 과매수 구간
 fig.add_hline(y=30, line_dash="dash", line_color="green", row=3, col=1)  # 과매도 구간
+fig.add_hline(y=60, line_dash="dash", line_color="blue", row=3, col=1)  # 과매수 구간
+fig.add_hline(y=40, line_dash="dash", line_color="blue", row=3, col=1)  # 과매수 구간
 
 
 # Plotly 차트에 MACD 및 신호선 트레이스 추가
