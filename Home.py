@@ -21,5 +21,7 @@ Welcome to my DK Stock Portfolio!
 Here are the apps I made:
             
 - [x] [📃 StockBase](/StockBase)
+- [x] [📃 MinutesTrading](/minutesTrading)
+- [x] [📃 FuturesTrading](/futuresTrading)
 """
 )

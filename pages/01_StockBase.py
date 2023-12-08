@@ -115,16 +115,18 @@ def main():
 
     """
     )
+    # Symbol: BSWUSDT
 
+    # Symbol: USTCUSDT
+
+    # Symbol: SANTOSUSDT
     api_key = st.secrets["Binan_API_KEY"]
     api_secret = st.secrets["Binan_SECRET_KEY"]
     client = Client(api_key, api_secret)
-
-    fetcher = CoinDataFetcher(client)
-    print(fetcher)
-    # Data fetching
-    symbol = "ETHUSDT"
-    interval = Client.KLINE_INTERVAL_5MINUTE
+    # "ETHUSDT"
+    # JOEUSDT
+    symbol = "BSWUSDT"
+    interval = Client.KLINE_INTERVAL_30MINUTE
     # KLINE_INTERVAL_5MINUTE
     # KLINE_INTERVAL_1DAY
     # "30 day ago UTC"
