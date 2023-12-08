@@ -1,2 +1,0 @@
-class rsi(self):
-    pass
